@@ -34,7 +34,7 @@ export class Graph {
 	 * @param {string} name
 	 * @returns {GraphNode|null}
 	 */
-	#get_node_by_name(name) {
+	get_node_by_name(name) {
 		/** @type {GraphNode|null} */
 		let node = null;
 
@@ -52,7 +52,7 @@ export class Graph {
 	 * @param {GraphNode} node2
 	 * @return {Edge|null}
 	 */
-	#get_edge(node1, node2) {
+	get_edge(node1, node2) {
 		/** @type {Edge|null} */
 		let edge = null;
 
@@ -79,7 +79,7 @@ export class Graph {
 	 * @returns {GraphNode}
 	 */
 	add_node(name) {
-		const node_or_null = this.#get_node_by_name(name);
+		const node_or_null = this.get_node_by_name(name);
 
 		if (node_or_null === null) {
 			const node = new GraphNode(name);
@@ -96,9 +96,15 @@ export class Graph {
 	 * @returns {Edge}
 	 */
 	add_edge(node1, node2) {
-		const edge = new Edge(node1, node2, this.directed);
-		this.edges.push(edge);
-		return edge;
+		const edge_or_null = this.get_edge(node1, node2);
+
+		if (edge_or_null === null) {
+			const edge = new Edge(node1, node2, this.directed);
+			this.edges.push(edge);
+			return edge;
+		} else {
+			return edge_or_null;
+		}
 	}
 
 	/**
@@ -133,6 +139,7 @@ export class Graph {
 		for (let line = 0; line < matrix.length; line++) {
 			for (let column = 0; column < matrix[line].length; column++) {
 				let value = String(matrix[line][column]);
+				// if (value === "0") value = ".";
 
 				if (column === 0) {
 					value = value.padStart(2, " ");
