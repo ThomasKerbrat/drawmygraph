@@ -1,5 +1,5 @@
 import { get_divisibles_graph, get_liters_graph } from "./seeders.js";
-import { draw_graph } from "./drawing.js";
+import { CanvasController, GraphController, draw_graph } from "./drawing.js";
 
 const divisibles_graph = get_divisibles_graph(1, 12);
 // document.querySelector("#adjency-matrix").innerText = divisibles_graph.to_adjency_matrix();
@@ -13,3 +13,5 @@ const liters_graph = get_liters_graph();
 
 const canvas_element = document.querySelector("#graph-canvas");
 draw_graph(liters_graph, canvas_element);
+// const canvas_controller = new CanvasController(canvas_element);
+// const graph_controller = new GraphController(liters_graph, canvas_element);
