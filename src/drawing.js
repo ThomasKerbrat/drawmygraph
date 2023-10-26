@@ -1,11 +1,25 @@
 import { Edge, Graph, GraphNode } from "./models.js";
 
+/** @typedef {{ x: number, y: number }} Vector */
+
+/**	@typedef {{ lineWidth: number, strokeStyle: string }} StrokeProperties */
+/**	@typedef {{ fillStyle: string }} FillProperties */
+/**	@typedef {{ font: string }} FontProperties */
+
+/**	@typedef {{ path: Path2D, stroke: StrokeProperties, fill: FillProperties }} NodeView */
+/**	@typedef {{ path: Path2D, stroke: StrokeProperties }} EdgeView */
+/**	@typedef {{ text: string, position: Vector, font: FontProperties, fill: FillProperties }} LabelView */
 /**
- * Draw an instance of Graph to the given 
- * @param {Graph} graph The graph to draw
- * @param {HTMLCanvasElement} canvas The canvas element to draw to
+ * @typedef {Object} GraphView
+ * @property {Map<Edge, EdgeView>} edges
+ * @property {Map<GraphNode, NodeView>} nodes
+ * @property {LabelView[]} labels
  */
-export function draw_graph(graph, canvas) {
+
+/**
+ * @returns {GraphView}
+ */
+export function compute_graph_view(graph, canvas) {
 	// Canvas' properties
 	const context = canvas.getContext("2d");
 	const width = canvas.width;
@@ -17,6 +31,7 @@ export function draw_graph(graph, canvas) {
 	const big_circle_radius = Math.floor(Math.min(width, height) * 0.4);
 
 	// Compute nodes coordinates
+	/** @type {Map<GraphNode, Vector>} */
 	const node_coords = new Map();
 	const quantity = graph.nodes.length;
 	const step = (2 * Math.PI) / quantity;
@@ -29,172 +44,145 @@ export function draw_graph(graph, canvas) {
 		angle += step;
 	}
 
-	// Draw edges
-	context.lineWidth = 2;
+	// Prepare the GraphView object
+	/** @type {GraphView} */
+	const graph_view = {
+		edges: new Map(),
+		nodes: new Map(),
+		labels: new Array(),
+	};
 
+	// Compute edges
 	for (let edge of graph.edges) {
-		const node_xy_1 = node_coords.get(edge.node1);
-		const node_xy_2 = node_coords.get(edge.node2);
+		const n1c = node_coords.get(edge.node1);
+		const n2c = node_coords.get(edge.node2);
 
 		const path = new Path2D();
-		path.moveTo(node_xy_1.x, node_xy_1.y);
-		path.lineTo(node_xy_2.x, node_xy_2.y);
-		context.stroke(path);
+		const cp = compute_cp(n1c, n2c, 0);
+		path.bezierCurveTo(n1c.x, n1c.y, cp.x, cp.y, n2c.x, n2c.y);
+		graph_view.edges.set(edge, {
+			path,
+			stroke: {
+				lineWidth: 2,
+				strokeStyle: "black",
+			},
+		});
 	}
 
-	// Draw nodes
+	// Compute nodes
 	const node_radius = 30;
+	const label_font = node_radius + "px sans-serif";
 
-	context.strokeStyle = "black";
-	context.lineWidth = 3;
-	context.font = node_radius + "px sans-serif";
+	// Useful for computing text width and thus centering the text inside the node
+	context.font = label_font;
 
 	for (let node of graph.nodes) {
 		const node_xy = node_coords.get(node);
 
+		// Node's circle (fill and stroke)
 		const path = new Path2D();
 		path.arc(node_xy.x, node_xy.y, node_radius, 0, 2 * Math.PI);
-		context.fillStyle = "white";
-		context.fill(path);
-		context.stroke(path);
+		graph_view.nodes.set(node, {
+			path,
+			fill: {
+				fillStyle: "white",
+			},
+			stroke: {
+				lineWidth: 3,
+				strokeStyle: "black",
+			},
+		});
 
+		// Node's label (fill)
 		const text_metrics = context.measureText(node.name);
-		context.fillStyle = "black";
-		context.fillText(node.name, node_xy.x - text_metrics.width / 2, node_xy.y + node_radius * 0.3);
+		graph_view.labels.push({
+			text: node.name,
+			position: {
+				x: node_xy.x - text_metrics.width / 2,
+				y: node_xy.y + node_radius * 0.3,
+			},
+			font: {
+				font: node_radius + "px sans-serif",
+			},
+			fill: {
+				fillStyle: "black",
+			},
+		});
+	}
+
+	return graph_view;
+}
+
+/**
+ * @param {GraphView} graph_view
+ */
+export function draw_graph_view(canvas, graph_view) {
+	// Canvas' properties
+	const context = canvas.getContext("2d");
+	const width = canvas.width;
+	const height = canvas.height;
+	context.clearRect(0, 0, width, height);
+
+	// Draw edges
+	for (let [_, edge_view] of graph_view.edges) {
+		context.lineWidth = edge_view.stroke.lineWidth;
+		context.strokeStyle = edge_view.stroke.strokeStyle;
+		context.stroke(edge_view.path);
+	}
+
+	// Draw nodes
+	for (let [_, node_view] of graph_view.nodes) {
+		context.fillStyle = node_view.fill.fillStyle;
+		context.fill(node_view.path);
+
+		context.lineWidth = node_view.stroke.lineWidth;
+		context.strokeStyle = node_view.stroke.strokeStyle;
+		context.stroke(node_view.path);
+	}
+
+	// Draw labels
+	for (let label_view of graph_view.labels) {
+		context.font = label_view.font;
+		context.fillStyle = label_view.fill.fillStyle;
+		context.fillText(label_view.text, label_view.position.x, label_view.position.y);
 	}
 }
 
-class Vector {
-	/** @type {number} */
-	x;
-	/** @type {number} */
-	y;
+function draw_point(context, x, y, color) {
+	context.fillStyle = color;
+	const path = new Path2D();
+	path.arc(x, y, 3, 0, Math.PI * 2);
+	context.fill(path);
+}
 
-	constructor(x, y) {
-		this.x = x;
-		this.y = y;
+/**
+ * @param {Vector} node1
+ * @param {Vector} node2
+ * @param {number} factor
+ * @returns {Vector}
+ */
+function compute_cp(node1, node2, factor = 1) {
+	// The halfway point between the two nodes
+	const middle_point = compute_middle_point(node1, node2);
+	// Coordinates of the node2 as if the node1 was at (0,0)
+	const node2_ref_node1 = {
+		x: node2.x - node1.x,
+		y: node2.y - node1.y,
+	};
+
+	const angle = Math.atan2(node2_ref_node1.y, node2_ref_node1.x) + (Math.PI / 2);
+	const dx = Math.cos(angle) * factor;
+	const dy = Math.sin(angle) * factor;
+
+	return {
+		x: middle_point.x + dx,
+		y: middle_point.y + dy,
 	}
 }
 
-export class CanvasController {
-	constructor(element) {
-		const height = element.height;
-		const width = element.width;
-		const ctx = element.getContext("2d");
-		// ctx.scale(1, -1);
-		ctx.translate(width / 2, height / 2);
-	}
-}
-
-export class GraphController {
-	/**
-	 * @param {Graph} graph
-	 * @param {HTMLCanvasElement} canvas_element
-	 */
-	constructor(graph, canvas_element) {
-		this.graph = graph;
-		this.canvas_element = canvas_element;
-
-		const ctx = this.canvas_element.getContext("2d");
-		const height = this.canvas_element.height;
-		const width = this.canvas_element.width;
-		const origin = new Vector(0, 0);
-		const radius = Math.floor(Math.min(width, height) * 0.4);
-
-		this.view = new GraphView(origin, radius, this.graph.nodes);
-		this.view.draw(ctx);
-	}
-}
-
-export class GraphView {
-	/** @type {NodeView[]} */
-	#node_views;
-
-	constructor(origin, radius, nodes) {
-		this.#node_views = [];
-
-		const step = (2 * Math.PI) / nodes.length;
-		let angle = -0.5 * Math.PI;
-
-		for (let node of nodes) {
-			const position = new Vector(Math.cos(angle) * radius + origin.x, Math.sin(angle) * radius + origin.y);
-			this.#node_views.push(new NodeView(node, position, 30, "white", "black", 3, "black"));
-			angle += step;
-		}
-	}
-
-	draw(context) {
-		for (let node of this.#node_views) {
-			node.draw(context);
-		}
-	}
-}
-
-export class NodeView {
-	/** @type {GraphNode} */
-	#node;
-
-	/** @type {Vector} */
-	position;
-	/** @type {number} */
-	radius;
-
-	/** @type {string} */
-	background_color;
-	/** @type {string} */
-	text_color;
-	/** @type {number} */
-	text_size;
-	/** @type {string} */
-	font_family = "sans-serif";
-	/** @type {number} */
-	border_width;
-	/** @type {string} */
-	border_color;
-
-	/** @type {Path2D} */
-	#path;
-
-	constructor(node, position, radius, bg_color, text_color, border_width, border_color) {
-		this.#node = node;
-		this.position = position;
-		this.radius = radius;
-		this.background_color = bg_color;
-		this.text_color = text_color;
-		this.text_size = this.radius;
-		this.border_width = border_width;
-		this.border_color = border_color;
-
-		this.#path = new Path2D();
-		this.#path.arc(this.position.x, this.position.y, this.radius, 0, 2 * Math.PI);
-	}
-
-	get text() {
-		return this.#node.name;
-	}
-
-	draw(context) {
-		context.fillStyle = this.background_color;
-		context.fill(this.#path);
-
-		context.lineWidth = this.border_width;
-		context.strokeStyle = this.border_color;
-		context.stroke(this.#path);
-
-		context.fillStyle = this.text_color;
-		context.font = this.text_size + "px " + this.font_family;
-		const text_metrics = context.measureText(this.text);
-		context.fillText(this.text, this.position.x - text_metrics.width / 2, this.position.y + this.radius * 0.3);
-	}
-}
-
-export class EdgeView {
-	/** @type {Edge} */
-	edge;
-	/** @type {Path2D} */
-	#path;
-
-	constructor(edge) {
-		this.edge = edge;
-	}
+function compute_middle_point(point1, point2) {
+	return {
+		x: (point1.x + point2.x) / 2,
+		y: (point1.y + point2.y) / 2,
+	};
 }
